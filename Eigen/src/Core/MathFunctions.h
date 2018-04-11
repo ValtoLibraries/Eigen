@@ -347,31 +347,7 @@ struct norm1_retval
 * Implementation of hypot                                                *
 ****************************************************************************/
 
-template<typename Scalar>
-struct hypot_impl
-{
-  typedef typename NumTraits<Scalar>::Real RealScalar;
-  static inline RealScalar run(const Scalar& x, const Scalar& y)
-  {
-    EIGEN_USING_STD_MATH(abs);
-    EIGEN_USING_STD_MATH(sqrt);
-    RealScalar _x = abs(x);
-    RealScalar _y = abs(y);
-    Scalar p, qp;
-    if(_x>_y)
-    {
-      p = _x;
-      qp = _y / p;
-    }
-    else
-    {
-      p = _y;
-      qp = _x / p;
-    }
-    if(p==RealScalar(0)) return RealScalar(0);
-    return p * sqrt(RealScalar(1) + qp*qp);
-  }
-};
+template<typename Scalar> struct hypot_impl;
 
 template<typename Scalar>
 struct hypot_retval
@@ -749,7 +725,7 @@ inline EIGEN_MATHFUNC_RETVAL(random, Scalar) random()
   return EIGEN_MATHFUNC_IMPL(random, Scalar)::run();
 }
 
-// Implementatin of is* functions
+// Implementation of is* functions
 
 // std::is* do not work with fast-math and gcc, std::is* are available on MSVC 2013 and newer, as well as in clang.
 #if (EIGEN_HAS_CXX11_MATH && !(EIGEN_COMP_GNUC_STRICT && __FINITE_MATH_ONLY__)) || (EIGEN_COMP_MSVC>=1800) || (EIGEN_COMP_CLANG)
@@ -1289,6 +1265,22 @@ float exp(const float &x) { return ::expf(x); }
 
 template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
 double exp(const double &x) { return ::exp(x); }
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+std::complex<float> exp(const std::complex<float>& x) {
+  auto com = ::expf(x.real());
+  auto res_real = com * ::cosf(x.imag());
+  auto res_imag = com * ::sinf(x.imag());
+  return std::complex<float>(res_real, res_imag);
+}
+
+template<> EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
+std::complex<double> exp(const std::complex<double>& x) {
+  auto com = ::exp(x.real());
+  auto res_real = com * ::cos(x.imag());
+  auto res_imag = com * ::sin(x.imag());
+  return std::complex<double>(res_real, res_imag);
+}
 #endif
 
 template<typename Scalar>
