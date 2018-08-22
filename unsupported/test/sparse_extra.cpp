@@ -8,7 +8,7 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-// import basic and product tests for deprectaed DynamicSparseMatrix
+// import basic and product tests for deprecated DynamicSparseMatrix
 #define EIGEN_NO_DEPRECATED_WARNING
 #include "sparse_basic.cpp"
 #include "sparse_product.cpp"
@@ -142,7 +142,7 @@ void check_marketio()
   VERIFY_IS_EQUAL(DenseMatrix(m1),DenseMatrix(m2));
 }
 
-void test_sparse_extra()
+EIGEN_DECLARE_TEST(sparse_extra)
 {
   for(int i = 0; i < g_repeat; i++) {
     int s = Eigen::internal::random<int>(1,50);

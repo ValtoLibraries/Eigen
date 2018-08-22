@@ -20,7 +20,7 @@ namespace Eigen {
   * \brief The tensor base class.
   *
   * This class is the common parent of the Tensor and TensorMap class, thus
-  * making it possible to use either class interchangably in expressions.
+  * making it possible to use either class interchangeably in expressions.
   */
 
 template<typename Derived>
@@ -133,11 +133,37 @@ class TensorBase<Derived, ReadOnlyAccessors>
       return unaryExpr(internal::scalar_digamma_op<Scalar>());
     }
 
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE const TensorCwiseUnaryOp<internal::scalar_i0e_op<Scalar>, const Derived>
+    i0e() const {
+      return unaryExpr(internal::scalar_i0e_op<Scalar>());
+    }
+
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE const TensorCwiseUnaryOp<internal::scalar_i1e_op<Scalar>, const Derived>
+    i1e() const {
+      return unaryExpr(internal::scalar_i1e_op<Scalar>());
+    }
+
     // igamma(a = this, x = other)
     template<typename OtherDerived> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     const TensorCwiseBinaryOp<internal::scalar_igamma_op<Scalar>, const Derived, const OtherDerived>
     igamma(const OtherDerived& other) const {
       return binaryExpr(other.derived(), internal::scalar_igamma_op<Scalar>());
+    }
+
+    // igamma_der_a(a = this, x = other)
+    template<typename OtherDerived> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+    const TensorCwiseBinaryOp<internal::scalar_igamma_der_a_op<Scalar>, const Derived, const OtherDerived>
+    igamma_der_a(const OtherDerived& other) const {
+      return binaryExpr(other.derived(), internal::scalar_igamma_der_a_op<Scalar>());
+    }
+
+    // gamma_sample_der_alpha(alpha = this, sample = other)
+    template<typename OtherDerived> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+    const TensorCwiseBinaryOp<internal::scalar_gamma_sample_der_alpha_op<Scalar>, const Derived, const OtherDerived>
+    gamma_sample_der_alpha(const OtherDerived& other) const {
+      return binaryExpr(other.derived(), internal::scalar_gamma_sample_der_alpha_op<Scalar>());
     }
 
     // igammac(a = this, x = other)
@@ -174,9 +200,9 @@ class TensorBase<Derived, ReadOnlyAccessors>
     }
 
     EIGEN_DEVICE_FUNC
-    EIGEN_STRONG_INLINE const TensorCwiseUnaryOp<internal::scalar_sigmoid_op<Scalar>, const Derived>
+    EIGEN_STRONG_INLINE const TensorCwiseUnaryOp<internal::scalar_logistic_op<Scalar>, const Derived>
     sigmoid() const {
-      return unaryExpr(internal::scalar_sigmoid_op<Scalar>());
+      return unaryExpr(internal::scalar_logistic_op<Scalar>());
     }
 
     EIGEN_DEVICE_FUNC
@@ -491,9 +517,15 @@ class TensorBase<Derived, ReadOnlyAccessors>
     typedef Eigen::IndexPair<Index> DimensionPair;
 
     template<typename OtherDerived, typename Dimensions> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
-    const TensorContractionOp<const Dimensions, const Derived, const OtherDerived>
+    const TensorContractionOp<const Dimensions, const Derived, const OtherDerived, const NoOpOutputKernel>
     contract(const OtherDerived& other, const Dimensions& dims) const {
-      return TensorContractionOp<const Dimensions, const Derived, const OtherDerived>(derived(), other.derived(), dims);
+      return TensorContractionOp<const Dimensions, const Derived, const OtherDerived, const NoOpOutputKernel>(derived(), other.derived(), dims);
+    }
+
+    template<typename OtherDerived, typename Dimensions, typename OutputKernel> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+    const TensorContractionOp<const Dimensions, const Derived, const OtherDerived, const OutputKernel>
+    contract(const OtherDerived& other, const Dimensions& dims, const OutputKernel& output_kernel) const {
+      return TensorContractionOp<const Dimensions, const Derived, const OtherDerived, const OutputKernel>(derived(), other.derived(), dims, output_kernel);
     }
 
     // Convolutions.
@@ -506,8 +538,8 @@ class TensorBase<Derived, ReadOnlyAccessors>
     // Fourier transforms
     template <int FFTDataType, int FFTDirection, typename FFT> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     const TensorFFTOp<const FFT, const Derived, FFTDataType, FFTDirection>
-    fft(const FFT& fft) const {
-      return TensorFFTOp<const FFT, const Derived, FFTDataType, FFTDirection>(derived(), fft);
+    fft(const FFT& dims) const {
+      return TensorFFTOp<const FFT, const Derived, FFTDataType, FFTDirection>(derived(), dims);
     }
 
     // Scan.
@@ -691,8 +723,8 @@ class TensorBase<Derived, ReadOnlyAccessors>
 
     template <typename Broadcast> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     const TensorBroadcastingOp<const Broadcast, const Derived>
-    broadcast(const Broadcast& broadcast) const {
-      return TensorBroadcastingOp<const Broadcast, const Derived>(derived(), broadcast);
+    broadcast(const Broadcast& bcast) const {
+      return TensorBroadcastingOp<const Broadcast, const Derived>(derived(), bcast);
     }
 
     template <typename Axis, typename OtherDerived> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
@@ -800,8 +832,8 @@ class TensorBase<Derived, ReadOnlyAccessors>
     }
     template <typename Shuffle> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     const TensorShufflingOp<const Shuffle, const Derived>
-    shuffle(const Shuffle& shuffle) const {
-      return TensorShufflingOp<const Shuffle, const Derived>(derived(), shuffle);
+    shuffle(const Shuffle& shfl) const {
+      return TensorShufflingOp<const Shuffle, const Derived>(derived(), shfl);
     }
     template <typename Strides> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     const TensorStridingOp<const Strides, const Derived>
@@ -998,13 +1030,13 @@ class TensorBase : public TensorBase<Derived, ReadOnlyAccessors> {
 
     template <typename Shuffle> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     const TensorShufflingOp<const Shuffle, const Derived>
-    shuffle(const Shuffle& shuffle) const {
-      return TensorShufflingOp<const Shuffle, const Derived>(derived(), shuffle);
+    shuffle(const Shuffle& shfl) const {
+      return TensorShufflingOp<const Shuffle, const Derived>(derived(), shfl);
     }
     template <typename Shuffle> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     TensorShufflingOp<const Shuffle, Derived>
-    shuffle(const Shuffle& shuffle) {
-      return TensorShufflingOp<const Shuffle, Derived>(derived(), shuffle);
+    shuffle(const Shuffle& shfl) {
+      return TensorShufflingOp<const Shuffle, Derived>(derived(), shfl);
     }
 
     template <typename Strides> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
@@ -1020,8 +1052,8 @@ class TensorBase : public TensorBase<Derived, ReadOnlyAccessors> {
 
     // Select the device on which to evaluate the expression.
     template <typename DeviceType>
-    TensorDevice<Derived, DeviceType> device(const DeviceType& device) {
-      return TensorDevice<Derived, DeviceType>(device, derived());
+    TensorDevice<Derived, DeviceType> device(const DeviceType& dev) {
+      return TensorDevice<Derived, DeviceType>(dev, derived());
     }
 
  protected:

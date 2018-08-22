@@ -181,11 +181,12 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device>
   typedef TensorEvaluator<ArgType, Device> Impl;
   typedef typename XprType::CoeffReturnType CoeffReturnType;
   typedef typename PacketType<CoeffReturnType, Device>::type PacketReturnType;
-  static const int PacketSize = internal::unpacket_traits<PacketReturnType>::size;
+  static const int PacketSize = PacketType<CoeffReturnType, Device>::size;
 
   enum {
     IsAligned = false,
     PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
+    BlockAccess = false,
     Layout = TensorEvaluator<ArgType, Device>::Layout,
     CoordAccess = false,
     RawAccess = false
@@ -272,8 +273,8 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device>
           break;
         default:
           eigen_assert(false && "unexpected padding");
-          m_outputCols=0; // silence the uninitialised warnig;
-          m_outputRows=0; //// silence the uninitialised warnig;
+          m_outputCols=0; // silence the uninitialised warning;
+          m_outputRows=0; //// silence the uninitialised warning;
       }
     }
     eigen_assert(m_outputRows > 0);

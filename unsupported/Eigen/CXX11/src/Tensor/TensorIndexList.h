@@ -75,10 +75,10 @@ template<DenseIndex n> struct NumTraits<type2index<n> >
     MulCost = 1
   };
 
-  EIGEN_DEVICE_FUNC static inline Real epsilon() { return 0; }
-  EIGEN_DEVICE_FUNC static inline Real dummy_precision() { return 0; }
-  EIGEN_DEVICE_FUNC static inline Real highest() { return n; }
-  EIGEN_DEVICE_FUNC static inline Real lowest() { return n; }
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Real epsilon() { return 0; }
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Real dummy_precision() { return 0; }
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Real highest() { return n; }
+  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Real lowest() { return n; }
 };
 
 namespace internal {
@@ -350,7 +350,8 @@ struct IndexPairList : internal::IndexTuple<FirstType, OtherTypes...> {
 
 namespace internal {
 
-template<typename FirstType, typename... OtherTypes> size_t array_prod(const IndexList<FirstType, OtherTypes...>& sizes) {
+template<typename FirstType, typename... OtherTypes>
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE size_t array_prod(const IndexList<FirstType, OtherTypes...>& sizes) {
   size_t result = 1;
   for (int i = 0; i < array_size<IndexList<FirstType, OtherTypes...> >::value; ++i) {
     result *= sizes[i];

@@ -140,7 +140,7 @@ void check_indexed_view()
     "500  501  502  503  504  505  506  507  508  509")
   );
 
-  // takes the row numer 3, and repeat it 5 times
+  // take row number 3, and repeat it 5 times
   VERIFY( MATCH( A(seqN(3,5,0), all),
     "300  301  302  303  304  305  306  307  308  309\n"
     "300  301  302  303  304  305  306  307  308  309\n"
@@ -293,6 +293,14 @@ void check_indexed_view()
   }
 
 #if EIGEN_HAS_CXX11
+  // check lastN
+  VERIFY_IS_APPROX( a(lastN(3)), a.tail(3) );
+  VERIFY( MATCH( a(lastN(3)), "7\n8\n9" ) );
+  VERIFY_IS_APPROX( a(lastN(fix<3>())), a.tail<3>() );
+  VERIFY( MATCH( a(lastN(3,2)), "5\n7\n9" ) );
+  VERIFY( MATCH( a(lastN(3,fix<2>())), "5\n7\n9" ) );
+  VERIFY( a(lastN(fix<3>())).SizeAtCompileTime == 3 );
+
   VERIFY( (A(all, std::array<int,4>{{1,3,2,4}})).ColsAtCompileTime == 4);
 
   VERIFY_IS_APPROX( (A(std::array<int,3>{{1,3,5}}, std::array<int,4>{{9,6,3,0}})), A(seqN(1,3,2), seqN(9,4,-3)) );
@@ -388,7 +396,7 @@ void check_indexed_view()
 
 }
 
-void test_indexed_view()
+EIGEN_DECLARE_TEST(indexed_view)
 {
 //   for(int i = 0; i < g_repeat; i++) {
     CALL_SUBTEST_1( check_indexed_view() );
@@ -397,10 +405,6 @@ void test_indexed_view()
 //   }
 
   // static checks of some internals:
-
-  #define STATIC_CHECK( COND ) \
-    EIGEN_STATIC_ASSERT( (COND) , EIGEN_INTERNAL_ERROR_PLEASE_FILE_A_BUG_REPORT )
-
   STATIC_CHECK(( internal::is_valid_index_type<int>::value ));
   STATIC_CHECK(( internal::is_valid_index_type<unsigned int>::value ));
   STATIC_CHECK(( internal::is_valid_index_type<short>::value ));
