@@ -57,6 +57,8 @@ template <typename Scalar,int DataLayout>
 static void test_simple_reductions() {
   Tensor<Scalar, 4, DataLayout> tensor(2, 3, 5, 7);
   tensor.setRandom();
+  // Add a little offset so that the product reductions won't be close to zero.
+  tensor += tensor.constant(Scalar(0.5f));
   array<ptrdiff_t, 2> reduction_axis2;
   reduction_axis2[0] = 1;
   reduction_axis2[1] = 3;
@@ -225,11 +227,11 @@ static void test_simple_reductions() {
     Tensor<int, 1> ints(10);
     std::iota(ints.data(), ints.data() + ints.dimension(0), 0);
 
-    TensorFixedSize<bool, Sizes<> > all;
-    all = ints.all();
-    VERIFY(!all());
-    all = (ints >= ints.constant(0)).all();
-    VERIFY(all());
+    TensorFixedSize<bool, Sizes<> > all_;
+    all_ = ints.all();
+    VERIFY(!all_());
+    all_ = (ints >= ints.constant(0)).all();
+    VERIFY(all_());
 
     TensorFixedSize<bool, Sizes<> > any;
     any = (ints > ints.constant(10)).any();
@@ -368,7 +370,7 @@ static void test_static_dims() {
   Tensor<float, 2, DataLayout> out(72, 97);
   in.setRandom();
 
-#if !EIGEN_HAS_CONSTEXPR 
+#if !EIGEN_HAS_CONSTEXPR
   array<int, 2> reduction_axis;
   reduction_axis[0] = 1;
   reduction_axis[1] = 3;
@@ -386,7 +388,7 @@ static void test_static_dims() {
           expected = (std::max)(expected, in(i, k, j, l));
         }
       }
-      VERIFY_IS_APPROX(out(i, j), expected);
+      VERIFY_IS_EQUAL(out(i, j), expected);
     }
   }
 }
@@ -417,7 +419,7 @@ static void test_innermost_last_dims() {
           expected = (std::max)(expected, in(l, k, i, j));
         }
       }
-      VERIFY_IS_APPROX(out(i, j), expected);
+      VERIFY_IS_EQUAL(out(i, j), expected);
     }
   }
 }
@@ -448,7 +450,7 @@ static void test_innermost_first_dims() {
           expected = (std::max)(expected, in(i, j, k, l));
         }
       }
-      VERIFY_IS_APPROX(out(i, j), expected);
+      VERIFY_IS_EQUAL(out(i, j), expected);
     }
   }
 }
@@ -479,8 +481,27 @@ static void test_reduce_middle_dims() {
           expected = (std::max)(expected, in(i, k, l, j));
         }
       }
-      VERIFY_IS_APPROX(out(i, j), expected);
+      VERIFY_IS_EQUAL(out(i, j), expected);
     }
+  }
+}
+
+static void test_sum_accuracy() {
+  Tensor<float, 3> tensor(101, 101, 101);
+  for (float prescribed_mean : {1.0f, 10.0f, 100.0f, 1000.0f, 10000.0f}) {
+    tensor.setRandom();
+    tensor += tensor.constant(prescribed_mean);
+
+    Tensor<float, 0> sum = tensor.sum();
+    double expected_sum = 0.0;
+    for (int i = 0; i < 101; ++i) {
+      for (int j = 0; j < 101; ++j) {
+        for (int k = 0; k < 101; ++k) {
+          expected_sum += static_cast<double>(tensor(i, j, k));
+        }
+      }
+    }
+    VERIFY_IS_APPROX(sum(), static_cast<float>(expected_sum));
   }
 }
 
@@ -506,4 +527,5 @@ EIGEN_DECLARE_TEST(cxx11_tensor_reduction) {
   CALL_SUBTEST(test_innermost_first_dims<RowMajor>());
   CALL_SUBTEST(test_reduce_middle_dims<ColMajor>());
   CALL_SUBTEST(test_reduce_middle_dims<RowMajor>());
+  CALL_SUBTEST(test_sum_accuracy());
 }

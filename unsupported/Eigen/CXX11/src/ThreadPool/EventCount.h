@@ -51,14 +51,14 @@ class EventCount {
   class Waiter;
 
   EventCount(MaxSizeVector<Waiter>& waiters) : waiters_(waiters) {
-    eigen_assert(waiters.size() < (1 << kWaiterBits) - 1);
+    eigen_plain_assert(waiters.size() < (1 << kWaiterBits) - 1);
     // Initialize epoch to something close to overflow to test overflow.
     state_ = kStackMask | (kEpochMask - kEpochInc * waiters.size() * 2);
   }
 
   ~EventCount() {
     // Ensure there are no waiters.
-    eigen_assert((state_.load() & (kStackMask | kWaiterMask)) == kStackMask);
+    eigen_plain_assert((state_.load() & (kStackMask | kWaiterMask)) == kStackMask);
   }
 
   // Prewait prepares for waiting.
@@ -88,7 +88,7 @@ class EventCount {
       // We've already been notified.
       if (int64_t((state & kEpochMask) - epoch) > 0) return;
       // Remove this thread from prewait counter and add it to the waiter list.
-      eigen_assert((state & kWaiterMask) != 0);
+      eigen_plain_assert((state & kWaiterMask) != 0);
       uint64_t newstate = state - kWaiterInc + kEpochInc;
       newstate = (newstate & ~kStackMask) | (w - &waiters_[0]);
       if ((state & kStackMask) == kStackMask)
@@ -119,7 +119,7 @@ class EventCount {
       // We've already been notified.
       if (int64_t((state & kEpochMask) - epoch) > 0) return;
       // Remove this thread from prewait counter.
-      eigen_assert((state & kWaiterMask) != 0);
+      eigen_plain_assert((state & kWaiterMask) != 0);
       if (state_.compare_exchange_weak(state, state - kWaiterInc + kEpochInc,
                                        std::memory_order_relaxed))
         return;
@@ -128,7 +128,7 @@ class EventCount {
 
   // Notify wakes one or all waiting threads.
   // Must be called after changing the associated wait predicate.
-  void Notify(bool all) {
+  void Notify(bool notifyAll) {
     std::atomic_thread_fence(std::memory_order_seq_cst);
     uint64_t state = state_.load(std::memory_order_acquire);
     for (;;) {
@@ -137,7 +137,7 @@ class EventCount {
         return;
       uint64_t waiters = (state & kWaiterMask) >> kWaiterShift;
       uint64_t newstate;
-      if (all) {
+      if (notifyAll) {
         // Reset prewait counter and empty wait list.
         newstate = (state & kEpochMask) + (kEpochInc * waiters) + kStackMask;
       } else if (waiters) {
@@ -157,10 +157,10 @@ class EventCount {
       }
       if (state_.compare_exchange_weak(state, newstate,
                                        std::memory_order_acquire)) {
-        if (!all && waiters) return;  // unblocked pre-wait thread
+        if (!notifyAll && waiters) return;  // unblocked pre-wait thread
         if ((state & kStackMask) == kStackMask) return;
         Waiter* w = &waiters_[state & kStackMask];
-        if (!all) w->next.store(nullptr, std::memory_order_relaxed);
+        if (!notifyAll) w->next.store(nullptr, std::memory_order_relaxed);
         Unpark(w);
         return;
       }
@@ -169,7 +169,8 @@ class EventCount {
 
   class Waiter {
     friend class EventCount;
-    // Align to 128 byte boundary to prevent false sharing with other Waiter objects in the same vector.
+    // Align to 128 byte boundary to prevent false sharing with other Waiter
+    // objects in the same vector.
     EIGEN_ALIGN_TO_BOUNDARY(128) std::atomic<Waiter*> next;
     std::mutex mu;
     std::condition_variable cv;

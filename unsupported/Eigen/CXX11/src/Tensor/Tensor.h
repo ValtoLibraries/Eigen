@@ -23,12 +23,12 @@ namespace Eigen {
   * The %Tensor class encompasses only dynamic-size objects so far.
   *
   * The first two template parameters are required:
-  * \tparam Scalar_ \anchor tensor_tparam_scalar Numeric type, e.g. float, double, int or std::complex<float>.
+  * \tparam Scalar_  Numeric type, e.g. float, double, int or `std::complex<float>`.
   *                 User defined scalar types are supported as well (see \ref user_defined_scalars "here").
   * \tparam NumIndices_ Number of indices (i.e. rank of the tensor)
   *
   * The remaining template parameters are optional -- in most cases you don't have to worry about them.
-  * \tparam Options_ \anchor tensor_tparam_options A combination of either \b #RowMajor or \b #ColMajor, and of either
+  * \tparam Options_  A combination of either \b #RowMajor or \b #ColMajor, and of either
   *                 \b #AutoAlign or \b #DontAlign.
   *                 The former controls \ref TopicStorageOrders "storage order", and defaults to column-major. The latter controls alignment, which is required
   *                 for vectorization. It defaults to aligning tensors. Note that tensors currently do not support any operations that profit from vectorization.
@@ -42,7 +42,7 @@ namespace Eigen {
   * \endcode
   *
   * This class can be extended with the help of the plugin mechanism described on the page
-  * \ref TopicCustomizingEigen by defining the preprocessor symbol \c EIGEN_TENSOR_PLUGIN.
+  * \ref TopicCustomizing_Plugins by defining the preprocessor symbol \c EIGEN_TENSOR_PLUGIN.
   *
   * <i><b>Some notes:</b></i>
   *
@@ -476,6 +476,18 @@ class Tensor : public TensorBase<Tensor<Scalar_, NumIndices_, Options_, IndexTyp
       EIGEN_STATIC_ASSERT(NumIndices == 0, YOU_MADE_A_PROGRAMMING_MISTAKE);
       // Nothing to do: rank 0 tensors have fixed size
     }
+
+#ifdef EIGEN_HAS_INDEX_LIST
+    template <typename FirstType, typename... OtherTypes>
+    EIGEN_DEVICE_FUNC
+    void resize(const Eigen::IndexList<FirstType, OtherTypes...>& dimensions) {
+      array<Index, NumIndices> dims;
+      for (int i = 0; i < NumIndices; ++i) {
+        dims[i] = static_cast<Index>(dimensions[i]);
+      }
+      resize(dims);
+    }
+#endif
 
     /** Custom Dimension */
 #ifdef EIGEN_HAS_SFINAE

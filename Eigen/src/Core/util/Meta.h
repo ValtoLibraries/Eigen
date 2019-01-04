@@ -128,6 +128,27 @@ template<> struct is_integral<unsigned __int64>       { enum { value = true }; }
 #endif
 #endif
 
+#if EIGEN_HAS_CXX11
+using std::make_unsigned;
+#else
+// TODO: Possibly improve this implementation of make_unsigned.
+// It is currently used only by
+// template<typename Scalar> struct random_default_impl<Scalar, false, true>.
+template<typename> struct make_unsigned;
+template<> struct make_unsigned<char>             { typedef unsigned char type; };
+template<> struct make_unsigned<signed char>      { typedef unsigned char type; };
+template<> struct make_unsigned<unsigned char>    { typedef unsigned char type; };
+template<> struct make_unsigned<signed short>     { typedef unsigned short type; };
+template<> struct make_unsigned<unsigned short>   { typedef unsigned short type; };
+template<> struct make_unsigned<signed int>       { typedef unsigned int type; };
+template<> struct make_unsigned<unsigned int>     { typedef unsigned int type; };
+template<> struct make_unsigned<signed long>      { typedef unsigned long type; };
+template<> struct make_unsigned<unsigned long>    { typedef unsigned long type; };
+#if EIGEN_COMP_MSVC
+template<> struct make_unsigned<signed __int64>   { typedef unsigned __int64 type; };
+template<> struct make_unsigned<unsigned __int64> { typedef unsigned __int64 type; };
+#endif
+#endif
 
 template <typename T> struct add_const { typedef const T type; };
 template <typename T> struct add_const<T&> { typedef T& type; };
@@ -596,7 +617,7 @@ T div_ceil(const T &a, const T &b)
 template<typename X, typename Y> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC
 bool equal_strict(const X& x,const Y& y) { return x == y; }
 
-#if !defined(EIGEN_GPU_COMPILE_PHASE) || defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC)
+#if !defined(EIGEN_GPU_COMPILE_PHASE) || (!defined(EIGEN_CUDA_ARCH) && defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC))
 template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC
 bool equal_strict(const float& x,const float& y) { return std::equal_to<float>()(x,y); }
 
@@ -607,7 +628,7 @@ bool equal_strict(const double& x,const double& y) { return std::equal_to<double
 template<typename X, typename Y> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC
 bool not_equal_strict(const X& x,const Y& y) { return x != y; }
 
-#if !defined(EIGEN_GPU_COMPILE_PHASE) || defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC)
+#if !defined(EIGEN_GPU_COMPILE_PHASE) || (!defined(EIGEN_CUDA_ARCH) && defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC))
 template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC
 bool not_equal_strict(const float& x,const float& y) { return std::not_equal_to<float>()(x,y); }
 

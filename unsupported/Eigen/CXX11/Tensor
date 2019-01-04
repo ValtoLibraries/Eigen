@@ -26,9 +26,9 @@
 #include <utility>
 #endif
 
-#include <Eigen/src/Core/util/DisableStupidWarnings.h>
-
 #include "../SpecialFunctions"
+
+#include "../../../Eigen/src/Core/util/DisableStupidWarnings.h"
 #include "src/util/CXX11Meta.h"
 #include "src/util/MaxSizeVector.h"
 
@@ -40,6 +40,8 @@
   * \code
   * #include <Eigen/CXX11/Tensor>
   * \endcode
+  *
+  * Much of the documentation can be found \ref eigen_tensors "here".
   */
 
 #include <cmath>
@@ -100,6 +102,9 @@ typedef unsigned __int64 uint64_t;
 #include "src/Tensor/TensorDeviceDefault.h"
 #include "src/Tensor/TensorDeviceThreadPool.h"
 #include "src/Tensor/TensorDeviceGpu.h"
+#ifndef gpu_assert
+#define gpu_assert(x)
+#endif
 #include "src/Tensor/TensorDeviceSycl.h"
 #include "src/Tensor/TensorIndexList.h"
 #include "src/Tensor/TensorDimensionList.h"
@@ -160,6 +165,6 @@ typedef unsigned __int64 uint64_t;
 
 #include "src/Tensor/TensorIO.h"
 
-#include <Eigen/src/Core/util/ReenableStupidWarnings.h>
+#include "../../../Eigen/src/Core/util/ReenableStupidWarnings.h"
 
 //#endif // EIGEN_CXX11_TENSOR_MODULE

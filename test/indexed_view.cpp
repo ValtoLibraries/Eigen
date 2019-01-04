@@ -15,6 +15,14 @@
 #ifdef EIGEN_TEST_PART_3
 // Make sure we also check c++98 max implementation
 #define EIGEN_MAX_CPP_VER 03
+
+// We need to disable this warning when compiling with c++11 while limiting Eigen to c++98
+// Ideally we would rather configure the compiler to build in c++98 mode but this needs
+// to be done at the CMakeLists.txt level.
+#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 8))
+  #pragma GCC diagnostic ignored "-Wdeprecated"
+#endif
+
 #endif
 
 #include <valarray>
@@ -77,12 +85,11 @@ is_same_seq_type(const T1& a, const T2& b)
 
 #define VERIFY_EQ_INT(A,B) VERIFY_IS_APPROX(int(A),int(B))
 
+// C++03 does not allow local or unnamed enums as index
+enum DummyEnum { XX=0, YY=1 };
+
 void check_indexed_view()
 {
-  using Eigen::placeholders::all;
-  using Eigen::placeholders::last;
-  using Eigen::placeholders::end;
-
   Index n = 10;
 
   ArrayXd a = ArrayXd::LinSpaced(n,0,n-1);
@@ -236,7 +243,7 @@ void check_indexed_view()
   VERIFY_IS_APPROX( A(seq(n-1,2,-2), seqN(n-1-6,4)), A(seq(last,2,-2), seqN(last-6,4)) );
   VERIFY_IS_APPROX( A(seq(n-1-6,n-1-2), seqN(n-1-6,4)), A(seq(last-6,last-2), seqN(6+last-6-6,4)) );
   VERIFY_IS_APPROX( A(seq((n-1)/2,(n)/2+3), seqN(2,4)), A(seq(last/2,(last+1)/2+3), seqN(last+2-last,4)) );
-  VERIFY_IS_APPROX( A(seq(n-2,2,-2), seqN(n-8,4)), A(seq(end-2,2,-2), seqN(end-8,4)) );
+  VERIFY_IS_APPROX( A(seq(n-2,2,-2), seqN(n-8,4)), A(seq(lastp1-2,2,-2), seqN(lastp1-8,4)) );
 
   // Check all combinations of seq:
   VERIFY_IS_APPROX( A(seq(1,n-1-2,2), seq(1,n-1-2,2)), A(seq(1,last-2,2), seq(1,last-2,fix<2>)) );
@@ -246,7 +253,7 @@ void check_indexed_view()
   VERIFY_IS_APPROX( A(seq(n-1-5,n-1-2), seq(n-1-5,n-1-2)), A(seq(last-5,last-2), seq(last-5,last-2)) );
 
   VERIFY_IS_APPROX( A.col(A.cols()-1), A(all,last) );
-  VERIFY_IS_APPROX( A(A.rows()-2, A.cols()/2), A(last-1, end/2) );
+  VERIFY_IS_APPROX( A(A.rows()-2, A.cols()/2), A(last-1, lastp1/2) );
   VERIFY_IS_APPROX( a(a.size()-2), a(last-1) );
   VERIFY_IS_APPROX( a(a.size()/2), a((last+1)/2) );
 
@@ -269,7 +276,7 @@ void check_indexed_view()
 
     VERIFY( is_same_eq(a.head(4), a(seq(0,3))) );
     VERIFY( is_same_eq(a.tail(4), a(seqN(last-3,4))) );
-    VERIFY( is_same_eq(a.tail(4), a(seq(end-4,last))) );
+    VERIFY( is_same_eq(a.tail(4), a(seq(lastp1-4,last))) );
     VERIFY( is_same_eq(a.segment<4>(3), a(seqN(3,fix<4>))) );
   }
 
@@ -375,9 +382,16 @@ void check_indexed_view()
   }
 
   // Check compilation of enums as index type:
+  a(XX) = 1;
+  A(XX,YY) = 1;
+  // Anonymous enums only work with C++11
+#if EIGEN_HAS_CXX11
   enum { X=0, Y=1 };
   a(X) = 1;
   A(X,Y) = 1;
+  A(XX,Y) = 1;
+  A(X,YY) = 1;
+#endif
 
   // Check compilation of varying integer types as index types:
   Index i = n/2;
@@ -393,6 +407,13 @@ void check_indexed_view()
   VERIFY_IS_EQUAL( A(i,i), A.coeff(i_sizet, i) );
   VERIFY_IS_EQUAL( A(i,i), A.coeff(i_sizet, i_short) );
   VERIFY_IS_EQUAL( A(i,i), A.coeff(5, i_sizet) );
+
+  // Regression test for Max{Rows,Cols}AtCompileTime
+  {
+    Matrix3i A3 = Matrix3i::Random();
+    ArrayXi ind(5); ind << 1,1,1,1,1;
+    VERIFY_IS_EQUAL( A3(ind,ind).eval(), MatrixXi::Constant(5,5,A3(1,1)) );
+  }
 
 }
 

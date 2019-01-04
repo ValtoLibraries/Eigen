@@ -96,19 +96,32 @@ inline void throw_std_bad_alloc()
 /** \internal Like malloc, but the returned pointer is guaranteed to be 16-byte aligned.
   * Fast, but wastes 16 additional bytes of memory. Does not throw any exception.
   */
-inline void* handmade_aligned_malloc(std::size_t size)
+EIGEN_DEVICE_FUNC inline void* handmade_aligned_malloc(std::size_t size, std::size_t alignment = EIGEN_DEFAULT_ALIGN_BYTES)
 {
-  void *original = std::malloc(size+EIGEN_DEFAULT_ALIGN_BYTES);
+  eigen_assert(alignment >= sizeof(void*) && (alignment & (alignment-1)) == 0 && "Alignment must be at least sizeof(void*) and a power of 2");
+  
+#if defined(EIGEN_HIP_DEVICE_COMPILE)
+  void *original = ::malloc(size+alignment);
+#else
+  void *original = std::malloc(size+alignment);
+#endif
+  
   if (original == 0) return 0;
-  void *aligned = reinterpret_cast<void*>((reinterpret_cast<std::size_t>(original) & ~(std::size_t(EIGEN_DEFAULT_ALIGN_BYTES-1))) + EIGEN_DEFAULT_ALIGN_BYTES);
+  void *aligned = reinterpret_cast<void*>((reinterpret_cast<std::size_t>(original) & ~(std::size_t(alignment-1))) + alignment);
   *(reinterpret_cast<void**>(aligned) - 1) = original;
   return aligned;
 }
 
 /** \internal Frees memory allocated with handmade_aligned_malloc */
-inline void handmade_aligned_free(void *ptr)
+EIGEN_DEVICE_FUNC inline void handmade_aligned_free(void *ptr)
 {
-  if (ptr) std::free(*(reinterpret_cast<void**>(ptr) - 1));
+  if (ptr) {
+#if defined(EIGEN_HIP_DEVICE_COMPILE)
+    ::free(*(reinterpret_cast<void**>(ptr) - 1));
+#else
+    std::free(*(reinterpret_cast<void**>(ptr) - 1));
+#endif
+  }
 }
 
 /** \internal
@@ -177,7 +190,7 @@ EIGEN_DEVICE_FUNC inline void* aligned_malloc(std::size_t size)
     #endif
 
     #if EIGEN_DEFAULT_ALIGN_BYTES==16
-    eigen_assert((size<16 || (std::size_t(result)%16)==0) && "System's malloc returned an unaligned pointer. Compile with EIGEN_MALLOC_ALREADY_ALIGNED=0 to fallback to handmade alignd memory allocator.");
+    eigen_assert((size<16 || (std::size_t(result)%16)==0) && "System's malloc returned an unaligned pointer. Compile with EIGEN_MALLOC_ALREADY_ALIGNED=0 to fallback to handmade aligned memory allocator.");
     #endif
   #else
     result = handmade_aligned_malloc(size);
@@ -811,8 +824,12 @@ template<typename T> void swap(scoped_array<T> &a,scoped_array<T> &b)
 #endif
 
 #define EIGEN_MAKE_ALIGNED_OPERATOR_NEW EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF(true)
-#define EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF_VECTORIZABLE_FIXED_SIZE(Scalar,Size) \
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF(bool(((Size)!=Eigen::Dynamic) && ((sizeof(Scalar)*(Size))%EIGEN_MAX_ALIGN_BYTES==0)))
+#define EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF_VECTORIZABLE_FIXED_SIZE(Scalar,Size)                        \
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF(bool(                                                             \
+        ((Size)!=Eigen::Dynamic) &&                                                                    \
+        (((EIGEN_MAX_ALIGN_BYTES>=16) && ((sizeof(Scalar)*(Size))%(EIGEN_MAX_ALIGN_BYTES  )==0)) ||    \
+         ((EIGEN_MAX_ALIGN_BYTES>=32) && ((sizeof(Scalar)*(Size))%(EIGEN_MAX_ALIGN_BYTES/2)==0)) ||    \
+         ((EIGEN_MAX_ALIGN_BYTES>=64) && ((sizeof(Scalar)*(Size))%(EIGEN_MAX_ALIGN_BYTES/4)==0))   )))
 
 /****************************************************************************/
 
@@ -866,6 +883,15 @@ public:
   aligned_allocator(const aligned_allocator<U>& other) : std::allocator<T>(other) {}
 
   ~aligned_allocator() {}
+
+  #if EIGEN_COMP_GNUC_STRICT && EIGEN_GNUC_AT_LEAST(7,0)
+  // In gcc std::allocator::max_size() is bugged making gcc triggers a warning:
+  // eigen/Eigen/src/Core/util/Memory.h:189:12: warning: argument 1 value '18446744073709551612' exceeds maximum object size 9223372036854775807
+  // See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=87544
+  size_type max_size() const {
+    return (std::numeric_limits<std::ptrdiff_t>::max)()/sizeof(T);
+  }
+  #endif
 
   pointer allocate(size_type num, const void* /*hint*/ = 0)
   {

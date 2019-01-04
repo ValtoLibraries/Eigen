@@ -183,6 +183,7 @@ ei_add_test(block)
 ei_add_test(corners)
 ei_add_test(symbolic_index)
 ei_add_test(indexed_view)
+ei_add_test(reshape)
 ei_add_test(swap)
 ei_add_test(resize)
 ei_add_test(conservative_resize)
@@ -198,7 +199,7 @@ ei_add_test(smallvectors)
 ei_add_test(mapped_matrix)
 ei_add_test(mapstride)
 ei_add_test(mapstaticmethods)
-ei_add_test(array)
+ei_add_test(array_cwise)
 ei_add_test(array_for_matrix)
 ei_add_test(array_replicate)
 ei_add_test(array_reverse)
@@ -284,6 +285,7 @@ ei_add_test(inplace_decomposition)
 ei_add_test(half_float)
 ei_add_test(array_of_string)
 ei_add_test(num_dimensions)
+ei_add_test(stl_iterators)
 
 add_executable(bug1213 bug1213.cpp bug1213_main.cpp)
 
@@ -436,11 +438,6 @@ if (EIGEN_TEST_HIP)
   endif()
     
 endif(EIGEN_TEST_HIP)
-
-
-
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/failtests)    
-add_test(NAME failtests WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/failtests COMMAND ${CMAKE_COMMAND} ${Eigen_SOURCE_DIR} -G "${CMAKE_GENERATOR}" -DEIGEN_FAILTEST=ON)
 
 option(EIGEN_TEST_BUILD_DOCUMENTATION "Test building the doxygen documentation" OFF)
 IF(EIGEN_TEST_BUILD_DOCUMENTATION)

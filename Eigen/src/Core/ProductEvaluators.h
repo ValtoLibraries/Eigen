@@ -20,7 +20,7 @@ namespace internal {
 /** \internal
   * Evaluator of a product expression.
   * Since products require special treatments to handle all possible cases,
-  * we simply deffer the evaluation logic to a product_evaluator class
+  * we simply defer the evaluation logic to a product_evaluator class
   * which offers more partial specialization possibilities.
   * 
   * \sa class product_evaluator
@@ -128,7 +128,7 @@ protected:
   PlainObject m_result;
 };
 
-// The following three shortcuts are enabled only if the scalar types match excatly.
+// The following three shortcuts are enabled only if the scalar types match exactly.
 // TODO: we could enable them for different scalar types when the product is not vectorized.
 
 // Dense = Product
@@ -424,7 +424,7 @@ struct generic_product_impl<Lhs,Rhs,DenseShape,DenseShape,CoeffBasedProductMode>
   void eval_dynamic(Dst& dst, const CwiseBinaryOp<internal::scalar_product_op<Scalar1,Scalar2>,
                                            const CwiseNullaryOp<internal::scalar_constant_op<Scalar1>, Plain1>, Xpr2>& lhs, const Rhs& rhs, const Func &func)
   {
-    call_assignment_no_alias(dst, lhs.lhs().functor().m_other * lhs.rhs().lazyProduct(rhs), func);
+    call_restricted_packet_assignment_no_alias(dst, lhs.lhs().functor().m_other * lhs.rhs().lazyProduct(rhs), func);
   }
 
   // Here, we we always have LhsT==Lhs, but we need to make it a template type to make the above
@@ -433,7 +433,7 @@ struct generic_product_impl<Lhs,Rhs,DenseShape,DenseShape,CoeffBasedProductMode>
   static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
   void eval_dynamic(Dst& dst, const LhsT& lhs, const Rhs& rhs, const Func &func)
   {
-    call_assignment_no_alias(dst, lhs.lazyProduct(rhs), func);
+    call_restricted_packet_assignment_no_alias(dst, lhs.lazyProduct(rhs), func);
   }
   
   
@@ -803,13 +803,21 @@ public:
     
     MatrixFlags = evaluator<MatrixType>::Flags,
     DiagFlags = evaluator<DiagonalType>::Flags,
-    _StorageOrder = MatrixFlags & RowMajorBit ? RowMajor : ColMajor,
+    
+    _StorageOrder = (Derived::MaxRowsAtCompileTime==1 && Derived::MaxColsAtCompileTime!=1) ? RowMajor
+                  : (Derived::MaxColsAtCompileTime==1 && Derived::MaxRowsAtCompileTime!=1) ? ColMajor
+                  : MatrixFlags & RowMajorBit ? RowMajor : ColMajor,
+    _SameStorageOrder = _StorageOrder == (MatrixFlags & RowMajorBit ? RowMajor : ColMajor),
+
     _ScalarAccessOnDiag =  !((int(_StorageOrder) == ColMajor && int(ProductOrder) == OnTheLeft)
                            ||(int(_StorageOrder) == RowMajor && int(ProductOrder) == OnTheRight)),
     _SameTypes = is_same<typename MatrixType::Scalar, typename DiagonalType::Scalar>::value,
     // FIXME currently we need same types, but in the future the next rule should be the one
     //_Vectorizable = bool(int(MatrixFlags)&PacketAccessBit) && ((!_PacketOnDiag) || (_SameTypes && bool(int(DiagFlags)&PacketAccessBit))),
-    _Vectorizable = bool(int(MatrixFlags)&PacketAccessBit) && _SameTypes && (_ScalarAccessOnDiag || (bool(int(DiagFlags)&PacketAccessBit))),
+    _Vectorizable =   bool(int(MatrixFlags)&PacketAccessBit)
+                  &&  _SameTypes
+                  && (_SameStorageOrder || (MatrixFlags&LinearAccessBit)==LinearAccessBit)
+                  && (_ScalarAccessOnDiag || (bool(int(DiagFlags)&PacketAccessBit))),
     _LinearAccessMask = (MatrixType::RowsAtCompileTime==1 || MatrixType::ColsAtCompileTime==1) ? LinearAccessBit : 0,
     Flags = ((HereditaryBits|_LinearAccessMask) & (unsigned int)(MatrixFlags)) | (_Vectorizable ? PacketAccessBit : 0),
     Alignment = evaluator<MatrixType>::Alignment,
@@ -870,10 +878,10 @@ struct product_evaluator<Product<Lhs, Rhs, ProductKind>, ProductTag, DiagonalSha
   
   typedef Product<Lhs, Rhs, ProductKind> XprType;
   typedef typename XprType::PlainObject PlainObject;
+  typedef typename Lhs::DiagonalVectorType DiagonalType;
+
   
-  enum {
-    StorageOrder = int(Rhs::Flags) & RowMajorBit ? RowMajor : ColMajor
-  };
+  enum { StorageOrder = Base::_StorageOrder };
 
   EIGEN_DEVICE_FUNC explicit product_evaluator(const XprType& xpr)
     : Base(xpr.rhs(), xpr.lhs().diagonal())
@@ -917,7 +925,7 @@ struct product_evaluator<Product<Lhs, Rhs, ProductKind>, ProductTag, DenseShape,
   typedef Product<Lhs, Rhs, ProductKind> XprType;
   typedef typename XprType::PlainObject PlainObject;
   
-  enum { StorageOrder = int(Lhs::Flags) & RowMajorBit ? RowMajor : ColMajor };
+  enum { StorageOrder = Base::_StorageOrder };
 
   EIGEN_DEVICE_FUNC explicit product_evaluator(const XprType& xpr)
     : Base(xpr.lhs(), xpr.rhs().diagonal())

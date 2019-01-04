@@ -208,8 +208,8 @@ __global__ void ReductionInitFullReduxKernelHalfFloat(Reducer reducer, const Sel
   eigen_assert(blockDim.x == 1);
   eigen_assert(gridDim.x == 1);
   if (num_coeffs % 2 != 0) {
-    half last = input.m_impl.coeff(num_coeffs-1);
-    *scratch = __halves2half2(last, reducer.initialize());
+    half lastCoeff = input.m_impl.coeff(num_coeffs-1);
+    *scratch = __halves2half2(lastCoeff, reducer.initialize());
   } else {
     *scratch = reducer.template initializePacket<half2>();
   }
@@ -292,7 +292,7 @@ __global__ void FullReductionKernelHalfFloat(Reducer reducer, const Self input, 
 }
 
 template <typename Op>
-__global__ void ReductionCleanupKernelHalfFloat(Op& reducer, half* output, half2* scratch) {
+__global__ void ReductionCleanupKernelHalfFloat(Op reducer, half* output, half2* scratch) {
   eigen_assert(threadIdx.x == 1);
   half tmp = __low2half(*scratch);
   reducer.reduce(__high2half(*scratch), &tmp);
@@ -376,12 +376,12 @@ struct FullReducer<Self, Op, GpuDevice, Vectorizable> {
   // so reduce the scope of the optimized version of the code to the simple cases
   // of doubles, floats and half floats
 #ifdef EIGEN_HAS_GPU_FP16
-  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+  static const bool HasOptimizedImplementation = !Self::ReducerTraits::IsStateful &&
       (internal::is_same<typename Self::CoeffReturnType, float>::value ||
        internal::is_same<typename Self::CoeffReturnType, double>::value ||
        (internal::is_same<typename Self::CoeffReturnType, Eigen::half>::value && reducer_traits<Op, GpuDevice>::PacketAccess));
 #else // EIGEN_HAS_GPU_FP16
-  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+  static const bool HasOptimizedImplementation = !Self::ReducerTraits::IsStateful &&
                                                 (internal::is_same<typename Self::CoeffReturnType, float>::value ||
                                                  internal::is_same<typename Self::CoeffReturnType, double>::value);
 #endif // EIGEN_HAS_GPU_FP16
@@ -697,12 +697,12 @@ struct InnerReducer<Self, Op, GpuDevice> {
   // so reduce the scope of the optimized version of the code to the simple case
   // of floats and half floats.
 #ifdef EIGEN_HAS_GPU_FP16
-  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+  static const bool HasOptimizedImplementation = !Self::ReducerTraits::IsStateful &&
       (internal::is_same<typename Self::CoeffReturnType, float>::value ||
        internal::is_same<typename Self::CoeffReturnType, double>::value ||
        (internal::is_same<typename Self::CoeffReturnType, Eigen::half>::value && reducer_traits<Op, GpuDevice>::PacketAccess));
 #else // EIGEN_HAS_GPU_FP16
-  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+  static const bool HasOptimizedImplementation = !Self::ReducerTraits::IsStateful &&
                                                  (internal::is_same<typename Self::CoeffReturnType, float>::value ||
                                                   internal::is_same<typename Self::CoeffReturnType, double>::value);
 #endif // EIGEN_HAS_GPU_FP16
@@ -759,7 +759,7 @@ struct OuterReducer<Self, Op, GpuDevice> {
   // Unfortunately nvidia doesn't support well exotic types such as complex,
   // so reduce the scope of the optimized version of the code to the simple case
   // of floats.
-  static const bool HasOptimizedImplementation = !Op::IsStateful &&
+  static const bool HasOptimizedImplementation = !Self::ReducerTraits::IsStateful &&
                                                  (internal::is_same<typename Self::CoeffReturnType, float>::value ||
                                                   internal::is_same<typename Self::CoeffReturnType, double>::value);
   template <typename Device, typename OutputType>
@@ -771,7 +771,7 @@ struct OuterReducer<Self, Op, GpuDevice> {
     // terminate called after throwing an instance of 'std::runtime_error'
     //   what():  No device code available for function: _ZN5Eigen8internal20OuterReductionKernelIL...
     //
-    // dont know why this happens (and why is it a runtime error instead of a compile time errror)
+    // don't know why this happens (and why is it a runtime error instead of a compile time error)
     //
     // this will be fixed by HIP PR#457
     EIGEN_DEVICE_FUNC

@@ -115,6 +115,7 @@ class TensorExecutor<Expression, DefaultDevice, Vectorizable,
                          const DefaultDevice& device = DefaultDevice()) {
     typedef TensorBlock<ScalarNoConst, StorageIndex, NumDims, Evaluator::Layout> TensorBlock;
     typedef TensorBlockMapper<ScalarNoConst, StorageIndex, NumDims, Evaluator::Layout> TensorBlockMapper;
+    typedef typename TensorBlock::Dimensions TensorBlockDimensions;
 
     Evaluator evaluator(expr, device);
     Index total_size = array_prod(evaluator.dimensions());
@@ -138,8 +139,9 @@ class TensorExecutor<Expression, DefaultDevice, Vectorizable,
       evaluator.getResourceRequirements(&resources);
       MergeResourceRequirements(resources, &block_shape, &block_total_size);
 
-      TensorBlockMapper block_mapper(evaluator.dimensions(), block_shape,
-                                     block_total_size);
+      TensorBlockMapper block_mapper(
+          TensorBlockDimensions(evaluator.dimensions()), block_shape,
+          block_total_size);
       block_total_size = block_mapper.block_dims_total_size();
 
       Scalar* data = static_cast<Scalar*>(
@@ -163,11 +165,11 @@ class TensorExecutor<Expression, DefaultDevice, Vectorizable,
 #ifdef EIGEN_USE_THREADS
 template <typename Evaluator, typename StorageIndex, bool Vectorizable>
 struct EvalRange {
-  static void run(Evaluator* evaluator_in, const StorageIndex first,
-                  const StorageIndex last) {
+  static void run(Evaluator* evaluator_in, const StorageIndex firstIdx,
+                  const StorageIndex lastIdx) {
     Evaluator evaluator = *evaluator_in;
-    eigen_assert(last >= first);
-    for (StorageIndex i = first; i < last; ++i) {
+    eigen_assert(lastIdx >= firstIdx);
+    for (StorageIndex i = firstIdx; i < lastIdx; ++i) {
       evaluator.evalScalar(i);
     }
   }
@@ -180,14 +182,14 @@ struct EvalRange<Evaluator, StorageIndex, /*Vectorizable*/ true> {
   static const int PacketSize =
       unpacket_traits<typename Evaluator::PacketReturnType>::size;
 
-  static void run(Evaluator* evaluator_in, const StorageIndex first,
-                  const StorageIndex last) {
+  static void run(Evaluator* evaluator_in, const StorageIndex firstIdx,
+                  const StorageIndex lastIdx) {
     Evaluator evaluator = *evaluator_in;
-    eigen_assert(last >= first);
-    StorageIndex i = first;
-    if (last - first >= PacketSize) {
-      eigen_assert(first % PacketSize == 0);
-      StorageIndex last_chunk_offset = last - 4 * PacketSize;
+    eigen_assert(lastIdx >= firstIdx);
+    StorageIndex i = firstIdx;
+    if (lastIdx - firstIdx >= PacketSize) {
+      eigen_assert(firstIdx % PacketSize == 0);
+      StorageIndex last_chunk_offset = lastIdx - 4 * PacketSize;
       // Give compiler a strong possibility to unroll the loop. But don't insist
       // on unrolling, because if the function is expensive compiler should not
       // unroll the loop at the expense of inlining.
@@ -196,12 +198,12 @@ struct EvalRange<Evaluator, StorageIndex, /*Vectorizable*/ true> {
           evaluator.evalPacket(i + j * PacketSize);
         }
       }
-      last_chunk_offset = last - PacketSize;
+      last_chunk_offset = lastIdx - PacketSize;
       for (; i <= last_chunk_offset; i += PacketSize) {
         evaluator.evalPacket(i);
       }
     }
-    for (; i < last; ++i) {
+    for (; i < lastIdx; ++i) {
       evaluator.evalScalar(i);
     }
   }
@@ -232,8 +234,8 @@ class TensorExecutor<Expression, ThreadPoolDevice, Vectorizable, Tileable> {
       const StorageIndex size = array_prod(evaluator.dimensions());
       device.parallelFor(size, evaluator.costPerCoeff(Vectorizable),
                          EvalRange::alignBlockSize,
-                         [&evaluator](StorageIndex first, StorageIndex last) {
-                           EvalRange::run(&evaluator, first, last);
+                         [&evaluator](StorageIndex firstIdx, StorageIndex lastIdx) {
+                           EvalRange::run(&evaluator, firstIdx, lastIdx);
                          });
     }
     evaluator.cleanup();
@@ -256,8 +258,8 @@ class TensorExecutor<Expression, ThreadPoolDevice, Vectorizable, /*Tileable*/ tr
     typedef TensorBlockMapper<ScalarNoConst, StorageIndex, NumDims, Evaluator::Layout> TensorBlockMapper;
 
     Evaluator evaluator(expr, device);
-    StorageIndex total_size = array_prod(evaluator.dimensions());
-    StorageIndex cache_size = device.firstLevelCacheSize() / sizeof(Scalar);
+    Index total_size = array_prod(evaluator.dimensions());
+    Index cache_size = device.firstLevelCacheSize() / sizeof(Scalar);
     if (total_size < cache_size) {
       // TODO(andydavis) Reduce block management overhead for small tensors.
       internal::TensorExecutor<Expression, ThreadPoolDevice, Vectorizable,
@@ -280,8 +282,9 @@ class TensorExecutor<Expression, ThreadPoolDevice, Vectorizable, /*Tileable*/ tr
       TensorOpCost cost = evaluator.costPerCoeff(Vectorizable);
       double taskSize = TensorCostModel<ThreadPoolDevice>::taskSize(1, cost);
       size_t block_size = static_cast<size_t>(1.0 / taskSize);
-      TensorBlockMapper block_mapper(evaluator.dimensions(), block_shape,
-                                     block_size);
+      TensorBlockMapper block_mapper(
+          typename TensorBlockMapper::Dimensions(evaluator.dimensions()),
+          block_shape, block_size);
       block_size = block_mapper.block_dims_total_size();
       const size_t aligned_blocksize =
           EIGEN_MAX_ALIGN_BYTES *
@@ -289,8 +292,8 @@ class TensorExecutor<Expression, ThreadPoolDevice, Vectorizable, /*Tileable*/ tr
       void* buf = device.allocate((num_threads + 1) * aligned_blocksize);
       device.parallelFor(
           block_mapper.total_block_count(), cost * block_size,
-          [=, &device, &evaluator, &block_mapper](StorageIndex first,
-                                                  StorageIndex last) {
+          [=, &device, &evaluator, &block_mapper](StorageIndex firstIdx,
+                                                  StorageIndex lastIdx) {
             // currentThreadId() returns -1 if called from a thread not in the
             // thread pool, such as the main thread dispatching Eigen
             // expressions.
@@ -298,7 +301,7 @@ class TensorExecutor<Expression, ThreadPoolDevice, Vectorizable, /*Tileable*/ tr
             eigen_assert(thread_idx >= -1 && thread_idx < num_threads);
             Scalar* thread_buf = reinterpret_cast<Scalar*>(
                 static_cast<char*>(buf) + aligned_blocksize * (thread_idx + 1));
-            for (StorageIndex i = first; i < last; ++i) {
+            for (StorageIndex i = firstIdx; i < lastIdx; ++i) {
               auto block = block_mapper.GetBlockForIndex(i, thread_buf);
               evaluator.evalBlock(&block);
             }
@@ -327,8 +330,8 @@ class TensorExecutor<Expression, GpuDevice, Vectorizable, Tileable> {
 template <typename Evaluator, typename StorageIndex, bool Vectorizable>
 struct EigenMetaKernelEval {
   static __device__ EIGEN_ALWAYS_INLINE
-  void run(Evaluator& eval, StorageIndex first, StorageIndex last, StorageIndex step_size) {
-    for (StorageIndex i = first; i < last; i += step_size) {
+  void run(Evaluator& eval, StorageIndex firstIdx, StorageIndex lastIdx, StorageIndex step_size) {
+    for (StorageIndex i = firstIdx; i < lastIdx; i += step_size) {
       eval.evalScalar(i);
     }
   }
@@ -337,17 +340,17 @@ struct EigenMetaKernelEval {
 template <typename Evaluator, typename StorageIndex>
 struct EigenMetaKernelEval<Evaluator, StorageIndex, true> {
   static __device__ EIGEN_ALWAYS_INLINE
-  void run(Evaluator& eval, StorageIndex first, StorageIndex last, StorageIndex step_size) {
+  void run(Evaluator& eval, StorageIndex firstIdx, StorageIndex lastIdx, StorageIndex step_size) {
     const StorageIndex PacketSize = unpacket_traits<typename Evaluator::PacketReturnType>::size;
-    const StorageIndex vectorized_size = (last / PacketSize) * PacketSize;
+    const StorageIndex vectorized_size = (lastIdx / PacketSize) * PacketSize;
     const StorageIndex vectorized_step_size = step_size * PacketSize;
 
     // Use the vector path
-    for (StorageIndex i = first * PacketSize; i < vectorized_size;
+    for (StorageIndex i = firstIdx * PacketSize; i < vectorized_size;
          i += vectorized_step_size) {
       eval.evalPacket(i);
     }
-    for (StorageIndex i = vectorized_size + first; i < last; i += step_size) {
+    for (StorageIndex i = vectorized_size + firstIdx; i < lastIdx; i += step_size) {
       eval.evalScalar(i);
     }
   }

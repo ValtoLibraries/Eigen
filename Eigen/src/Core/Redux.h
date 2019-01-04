@@ -32,14 +32,20 @@ public:
     PacketSize = unpacket_traits<PacketType>::size,
     InnerMaxSize = int(Evaluator::IsRowMajor)
                  ? Evaluator::MaxColsAtCompileTime
-                 : Evaluator::MaxRowsAtCompileTime
+                 : Evaluator::MaxRowsAtCompileTime,
+    OuterMaxSize = int(Evaluator::IsRowMajor)
+                 ? Evaluator::MaxRowsAtCompileTime
+                 : Evaluator::MaxColsAtCompileTime,
+    SliceVectorizedWork = int(InnerMaxSize)==Dynamic ? Dynamic
+                        : int(OuterMaxSize)==Dynamic ? (int(InnerMaxSize)>=int(PacketSize) ? Dynamic : 0)
+                        : (int(InnerMaxSize)/int(PacketSize)) * int(OuterMaxSize)
   };
 
   enum {
     MightVectorize = (int(Evaluator::Flags)&ActualPacketAccessBit)
                   && (functor_traits<Func>::PacketAccess),
     MayLinearVectorize = bool(MightVectorize) && (int(Evaluator::Flags)&LinearAccessBit),
-    MaySliceVectorize  = bool(MightVectorize) && int(InnerMaxSize)>=3*PacketSize
+    MaySliceVectorize  = bool(MightVectorize) && (int(SliceVectorizedWork)==Dynamic || int(SliceVectorizedWork)>=3)
   };
 
 public:
@@ -69,13 +75,15 @@ public:
     EIGEN_DEBUG_VAR(Evaluator::Flags)
     std::cerr.unsetf(std::ios::hex);
     EIGEN_DEBUG_VAR(InnerMaxSize)
+    EIGEN_DEBUG_VAR(OuterMaxSize)
+    EIGEN_DEBUG_VAR(SliceVectorizedWork)
     EIGEN_DEBUG_VAR(PacketSize)
     EIGEN_DEBUG_VAR(MightVectorize)
     EIGEN_DEBUG_VAR(MayLinearVectorize)
     EIGEN_DEBUG_VAR(MaySliceVectorize)
-    EIGEN_DEBUG_VAR(Traversal)
+    std::cerr << "Traversal" << " = " << Traversal << " (" << demangle_traversal(Traversal) << ")" << std::endl;
     EIGEN_DEBUG_VAR(UnrollingLimit)
-    EIGEN_DEBUG_VAR(Unrolling)
+    std::cerr << "Unrolling" << " = " << Unrolling << " (" << demangle_unrolling(Unrolling) << ")" << std::endl;
     std::cerr << std::endl;
   }
 #endif
@@ -137,38 +145,36 @@ struct redux_novec_unroller<Func, Evaluator, Start, 0>
 template<typename Func, typename Evaluator, int Start, int Length>
 struct redux_vec_unroller
 {
-  enum {
-    PacketSize = redux_traits<Func, Evaluator>::PacketSize,
-    HalfLength = Length/2
-  };
-
-  typedef typename Evaluator::Scalar Scalar;
-  typedef typename redux_traits<Func, Evaluator>::PacketType PacketScalar;
-
-  static EIGEN_STRONG_INLINE PacketScalar run(const Evaluator &eval, const Func& func)
+  template<typename PacketType>
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE PacketType run(const Evaluator &eval, const Func& func)
   {
+    enum {
+      PacketSize = unpacket_traits<PacketType>::size,
+      HalfLength = Length/2
+    };
+
     return func.packetOp(
-            redux_vec_unroller<Func, Evaluator, Start, HalfLength>::run(eval,func),
-            redux_vec_unroller<Func, Evaluator, Start+HalfLength, Length-HalfLength>::run(eval,func) );
+            redux_vec_unroller<Func, Evaluator, Start, HalfLength>::template run<PacketType>(eval,func),
+            redux_vec_unroller<Func, Evaluator, Start+HalfLength, Length-HalfLength>::template run<PacketType>(eval,func) );
   }
 };
 
 template<typename Func, typename Evaluator, int Start>
 struct redux_vec_unroller<Func, Evaluator, Start, 1>
 {
-  enum {
-    index = Start * redux_traits<Func, Evaluator>::PacketSize,
-    outer = index / int(Evaluator::InnerSizeAtCompileTime),
-    inner = index % int(Evaluator::InnerSizeAtCompileTime),
-    alignment = Evaluator::Alignment
-  };
-
-  typedef typename Evaluator::Scalar Scalar;
-  typedef typename redux_traits<Func, Evaluator>::PacketType PacketScalar;
-
-  static EIGEN_STRONG_INLINE PacketScalar run(const Evaluator &eval, const Func&)
+  template<typename PacketType>
+  EIGEN_DEVICE_FUNC
+  static EIGEN_STRONG_INLINE PacketType run(const Evaluator &eval, const Func&)
   {
-    return eval.template packetByOuterInner<alignment,PacketScalar>(outer, inner);
+    enum {
+      PacketSize = unpacket_traits<PacketType>::size,
+      index = Start * PacketSize,
+      outer = index / int(Evaluator::InnerSizeAtCompileTime),
+      inner = index % int(Evaluator::InnerSizeAtCompileTime),
+      alignment = Evaluator::Alignment
+    };
+    return eval.template packetByOuterInner<alignment,PacketType>(outer, inner);
   }
 };
 
@@ -321,7 +327,7 @@ struct redux_impl<Func, Evaluator, LinearVectorizedTraversal, CompleteUnrolling>
 {
   typedef typename Evaluator::Scalar Scalar;
 
-  typedef typename redux_traits<Func, Evaluator>::PacketType PacketScalar;
+  typedef typename redux_traits<Func, Evaluator>::PacketType PacketType;
   enum {
     PacketSize = redux_traits<Func, Evaluator>::PacketSize,
     Size = Evaluator::SizeAtCompileTime,
@@ -335,7 +341,7 @@ struct redux_impl<Func, Evaluator, LinearVectorizedTraversal, CompleteUnrolling>
     EIGEN_ONLY_USED_FOR_DEBUG(xpr)
     eigen_assert(xpr.rows()>0 && xpr.cols()>0 && "you are using an empty matrix");
     if (VectorizedSize > 0) {
-      Scalar res = func.predux(redux_vec_unroller<Func, Evaluator, 0, Size / PacketSize>::run(eval,func));
+      Scalar res = func.predux(redux_vec_unroller<Func, Evaluator, 0, Size / PacketSize>::template run<PacketType>(eval,func));
       if (VectorizedSize != Size)
         res = func(res,redux_novec_unroller<Func, Evaluator, VectorizedSize, Size-VectorizedSize>::run(eval,func));
       return res;
@@ -402,7 +408,7 @@ DenseBase<Derived>::redux(const Func& func) const
 
   typedef typename internal::redux_evaluator<Derived> ThisEvaluator;
   ThisEvaluator thisEval(derived());
-  
+
   // The initial expression is passed to the reducer as an additional argument instead of
   // passing it as a member of redux_evaluator to help  
   return internal::redux_impl<Func, ThisEvaluator>::run(thisEval, func, derived());

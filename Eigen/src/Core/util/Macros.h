@@ -487,7 +487,9 @@
 
 // Some old compilers do not support template specializations like:
 // template<typename T,int N> void foo(const T x[N]);
-#if !( EIGEN_COMP_CLANG && ((EIGEN_COMP_CLANG<309) || defined(__apple_build_version__)) || EIGEN_COMP_GNUC_STRICT && EIGEN_COMP_GNUC<49)
+#if !(   EIGEN_COMP_CLANG && (   (EIGEN_COMP_CLANG<309)                                                       \
+                              || (defined(__apple_build_version__) && (__apple_build_version__ < 9000000)))  \
+      || EIGEN_COMP_GNUC_STRICT && EIGEN_COMP_GNUC<49)
 #define EIGEN_HAS_STATIC_ARRAY_TEMPLATE 1
 #else
 #define EIGEN_HAS_STATIC_ARRAY_TEMPLATE 0
@@ -533,8 +535,11 @@
 #endif
 
 // Does the compiler support result_of?
+// It's likely that MSVC 2013 supports result_of but I couldn't not find a good source for that,
+// so let's be conservative.
 #ifndef EIGEN_HAS_STD_RESULT_OF
-#if EIGEN_MAX_CPP_VER>=11 && ((__has_feature(cxx_lambdas) || (defined(__cplusplus) && __cplusplus >= 201103L)))
+#if EIGEN_MAX_CPP_VER>=11 && \
+    (__has_feature(cxx_lambdas) || (defined(__cplusplus) && __cplusplus >= 201103L) || EIGEN_COMP_MSVC >= 1900)
 #define EIGEN_HAS_STD_RESULT_OF 1
 #else
 #define EIGEN_HAS_STD_RESULT_OF 0
@@ -635,6 +640,15 @@
   #endif
 #endif
 
+#ifndef EIGEN_HAS_CXX11_OVERRIDE_FINAL
+  #if    EIGEN_MAX_CPP_VER>=11 && \
+       (__cplusplus >= 201103L || EIGEN_COMP_MSVC >= 1700)
+    #define EIGEN_HAS_CXX11_OVERRIDE_FINAL 1
+  #else
+    #define EIGEN_HAS_CXX11_OVERRIDE_FINAL 0
+  #endif
+#endif
+
 #if defined(EIGEN_CUDACC) && EIGEN_HAS_CONSTEXPR
   // While available already with c++11, this is useful mostly starting with c++14 and relaxed constexpr rules
   #if defined(__NVCC__)
@@ -642,12 +656,9 @@
     #ifdef __CUDACC_RELAXED_CONSTEXPR__
       #define EIGEN_CONSTEXPR_ARE_DEVICE_FUNC
     #endif
-    // See bug 1580: clang/CUDA fails to make the following calls
-    // to constexpr bool std::equal_to::operator() even when
-    // EIGEN_CONSTEXPR_ARE_DEVICE_FUNC is defined in c++14 only.
-    // #elif defined(__clang__) && defined(__CUDA__) && EIGEN_HAS_CONSTEXPR == 1
-    //   // clang++ always considers constexpr functions as implicitly __host__ __device__
-    //   #define EIGEN_CONSTEXPR_ARE_DEVICE_FUNC
+  #elif defined(__clang__) && defined(__CUDA__) && __has_feature(cxx_relaxed_constexpr)
+    // clang++ always considers constexpr functions as implicitly __host__ __device__
+    #define EIGEN_CONSTEXPR_ARE_DEVICE_FUNC
   #endif
 #endif
 
@@ -731,10 +742,6 @@
 
 // All functions callable from CUDA/HIP code must be qualified with __device__
 #ifdef EIGEN_GPUCC
-  #ifndef EIGEN_DONT_VECTORIZE
-  #define EIGEN_DONT_VECTORIZE
-  #endif
-
   #define EIGEN_DEVICE_FUNC __host__ __device__
 #else
   #define EIGEN_DEVICE_FUNC
@@ -1090,6 +1097,15 @@ bool all(T t, Ts ... ts){ return t && all(ts...); }
 
 }
 }
+#endif
+
+#if EIGEN_HAS_CXX11_OVERRIDE_FINAL
+// provide override and final specifiers if they are available:
+#   define EIGEN_OVERRIDE override
+#   define EIGEN_FINAL final
+#else
+#   define EIGEN_OVERRIDE
+#   define EIGEN_FINAL
 #endif
 
 // Wrapping #pragma unroll in a macro since it is required for SYCL

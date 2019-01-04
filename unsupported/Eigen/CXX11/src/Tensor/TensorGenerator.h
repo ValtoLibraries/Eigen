@@ -12,7 +12,7 @@
 
 namespace Eigen {
 
-/** \class TensorGenerator
+/** \class TensorGeneratorOp
   * \ingroup CXX11_Tensor_Module
   *
   * \brief Tensor generator class.
@@ -92,6 +92,7 @@ struct TensorEvaluator<const TensorGeneratorOp<Generator, ArgType>, Device>
     IsAligned = false,
     PacketAccess = (PacketType<CoeffReturnType, Device>::size > 1),
     BlockAccess = false,
+    PreferBlockAccess = false,
     Layout = TensorEvaluator<ArgType, Device>::Layout,
     CoordAccess = false,  // to be implemented
     RawAccess = false

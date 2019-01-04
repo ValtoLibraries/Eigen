@@ -10,7 +10,6 @@
 #ifndef EIGEN_CXX11_THREADPOOL_RUNQUEUE_H_
 #define EIGEN_CXX11_THREADPOOL_RUNQUEUE_H_
 
-
 namespace Eigen {
 
 // RunQueue is a fixed-size, partially non-blocking deque or Work items.
@@ -40,14 +39,14 @@ class RunQueue {
  public:
   RunQueue() : front_(0), back_(0) {
     // require power-of-two for fast masking
-    eigen_assert((kSize & (kSize - 1)) == 0);
-    eigen_assert(kSize > 2);            // why would you do this?
-    eigen_assert(kSize <= (64 << 10));  // leave enough space for counter
+    eigen_plain_assert((kSize & (kSize - 1)) == 0);
+    eigen_plain_assert(kSize > 2);            // why would you do this?
+    eigen_plain_assert(kSize <= (64 << 10));  // leave enough space for counter
     for (unsigned i = 0; i < kSize; i++)
       array_[i].state.store(kEmpty, std::memory_order_relaxed);
   }
 
-  ~RunQueue() { eigen_assert(Size() == 0); }
+  ~RunQueue() { eigen_plain_assert(Size() == 0); }
 
   // PushFront inserts w at the beginning of the queue.
   // If queue is full returns w, otherwise returns default-constructed Work.
@@ -131,15 +130,14 @@ class RunQueue {
       Elem* e = &array_[mid & kMask];
       uint8_t s = e->state.load(std::memory_order_relaxed);
       if (n == 0) {
-        if (s != kReady ||
-            !e->state.compare_exchange_strong(s, kBusy,
-                                              std::memory_order_acquire))
+        if (s != kReady || !e->state.compare_exchange_strong(
+                               s, kBusy, std::memory_order_acquire))
           continue;
         start = mid;
       } else {
         // Note: no need to store temporal kBusy, we exclusively own these
         // elements.
-        eigen_assert(s == kReady);
+        eigen_plain_assert(s == kReady);
       }
       result->push_back(std::move(e->w));
       e->state.store(kEmpty, std::memory_order_release);
