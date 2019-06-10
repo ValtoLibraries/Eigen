@@ -166,17 +166,17 @@ template<> struct unpacket_traits<Packet4f> {
   typedef float     type;
   typedef Packet4f  half;
   typedef Packet4i  integer_packet;
-  enum {size=4, alignment=Aligned16};
+  enum {size=4, alignment=Aligned16, vectorizable=true, masked_load_available=false, masked_store_available=false};
 };
 template<> struct unpacket_traits<Packet2d> {
   typedef double    type;
   typedef Packet2d  half;
-  enum {size=2, alignment=Aligned16};
+  enum {size=2, alignment=Aligned16, vectorizable=true, masked_load_available=false, masked_store_available=false};
 };
 template<> struct unpacket_traits<Packet4i> {
   typedef int       type;
   typedef Packet4i  half;
-  enum {size=4, alignment=Aligned16};
+  enum {size=4, alignment=Aligned16, vectorizable=false, masked_load_available=false, masked_store_available=false};
 };
 
 #ifndef EIGEN_VECTORIZE_AVX
@@ -374,9 +374,21 @@ template<> EIGEN_STRONG_INLINE Packet4i pmax<Packet4i>(const Packet4i& a, const 
 template<> EIGEN_STRONG_INLINE Packet4f pcmp_le(const Packet4f& a, const Packet4f& b) { return _mm_cmple_ps(a,b); }
 template<> EIGEN_STRONG_INLINE Packet4f pcmp_lt(const Packet4f& a, const Packet4f& b) { return _mm_cmplt_ps(a,b); }
 template<> EIGEN_STRONG_INLINE Packet4f pcmp_eq(const Packet4f& a, const Packet4f& b) { return _mm_cmpeq_ps(a,b); }
+template<> EIGEN_STRONG_INLINE Packet4i pcmp_eq(const Packet4i& a, const Packet4i& b) { return _mm_cmpeq_epi32(a,b); }
+template<> EIGEN_STRONG_INLINE Packet2d pcmp_eq(const Packet2d& a, const Packet2d& b) { return _mm_cmpeq_pd(a,b); }
 template<> EIGEN_STRONG_INLINE Packet4f pcmp_lt_or_nan(const Packet4f& a, const Packet4f& b) { return _mm_cmpnge_ps(a,b); }
 
-template<> EIGEN_STRONG_INLINE Packet4i pcmp_eq(const Packet4i& a, const Packet4i& b) { return _mm_cmpeq_epi32(a,b); }
+template<> EIGEN_STRONG_INLINE Packet4i ptrue<Packet4i>(const Packet4i& a) { return _mm_cmpeq_epi32(a, a); }
+template<> EIGEN_STRONG_INLINE Packet4f
+ptrue<Packet4f>(const Packet4f& a) {
+  Packet4i b = _mm_castps_si128(a);
+  return _mm_castsi128_ps(_mm_cmpeq_epi32(b, b));
+}
+template<> EIGEN_STRONG_INLINE Packet2d
+ptrue<Packet2d>(const Packet2d& a) {
+  Packet4i b = _mm_castpd_si128(a);
+  return _mm_castsi128_pd(_mm_cmpeq_epi32(b, b));
+}
 
 template<> EIGEN_STRONG_INLINE Packet4f pand<Packet4f>(const Packet4f& a, const Packet4f& b) { return _mm_and_ps(a,b); }
 template<> EIGEN_STRONG_INLINE Packet2d pand<Packet2d>(const Packet2d& a, const Packet2d& b) { return _mm_and_pd(a,b); }
@@ -538,7 +550,7 @@ template<> EIGEN_STRONG_INLINE void pstore1<Packet2d>(double* to, const double& 
   pstore(to, Packet2d(vec2d_swizzle1(pa,0,0)));
 }
 
-#if EIGEN_COMP_PGI
+#if EIGEN_COMP_PGI && EIGEN_COMP_PGI < 1900
 typedef const void * SsePrefetchPtrType;
 #else
 typedef const char * SsePrefetchPtrType;
@@ -812,6 +824,17 @@ template<> EIGEN_STRONG_INLINE int predux_max<Packet4i>(const Packet4i& a)
 #endif // EIGEN_VECTORIZE_SSE4_1
 }
 
+// not needed yet
+// template<> EIGEN_STRONG_INLINE bool predux_all(const Packet4f& x)
+// {
+//   return _mm_movemask_ps(x) == 0xF;
+// }
+
+template<> EIGEN_STRONG_INLINE bool predux_any(const Packet4f& x)
+{
+  return _mm_movemask_ps(x) != 0x0;
+}
+
 #if EIGEN_COMP_GNUC
 // template <> EIGEN_STRONG_INLINE Packet4f pmadd(const Packet4f&  a, const Packet4f&  b, const Packet4f&  c)
 // {
@@ -1028,7 +1051,7 @@ template<> EIGEN_STRONG_INLINE double pmadd(const double& a, const double& b, co
 
 } // end namespace Eigen
 
-#if EIGEN_COMP_PGI
+#if EIGEN_COMP_PGI && EIGEN_COMP_PGI < 1900
 // PGI++ does not define the following intrinsics in C++ mode.
 static inline __m128  _mm_castpd_ps   (__m128d x) { return reinterpret_cast<__m128&>(x);  }
 static inline __m128i _mm_castpd_si128(__m128d x) { return reinterpret_cast<__m128i&>(x); }

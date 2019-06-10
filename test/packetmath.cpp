@@ -119,7 +119,16 @@ struct packet_helper
   inline Packet load(const T* from) const { return internal::pload<Packet>(from); }
 
   template<typename T>
+  inline Packet loadu(const T* from) const { return internal::ploadu<Packet>(from); }
+
+  template<typename T>
+  inline Packet load(const T* from, unsigned long long umask) const { return internal::ploadu<Packet>(from, umask); }
+
+  template<typename T>
   inline void store(T* to, const Packet& x) const { internal::pstore(to,x); }
+
+  template<typename T>
+  inline void store(T* to, const Packet& x, unsigned long long umask) const { internal::pstoreu(to, x, umask); }
 };
 
 template<typename Packet>
@@ -129,7 +138,16 @@ struct packet_helper<false,Packet>
   inline T load(const T* from) const { return *from; }
 
   template<typename T>
+  inline T loadu(const T* from) const { return *from; }
+
+  template<typename T>
+  inline T load(const T* from, unsigned long long) const { return *from; }
+
+  template<typename T>
   inline void store(T* to, const T& x) const { *to = x; }
+
+  template<typename T>
+  inline void store(T* to, const T& x, unsigned long long) const { *to = x; }
 };
 
 #define CHECK_CWISE1_IF(COND, REFOP, POP) if(COND) { \
@@ -169,6 +187,7 @@ template<typename Scalar,typename Packet> void packetmath()
   const int size = PacketSize*max_size;
   EIGEN_ALIGN_MAX Scalar data1[size];
   EIGEN_ALIGN_MAX Scalar data2[size];
+  EIGEN_ALIGN_MAX Scalar data3[size];
   EIGEN_ALIGN_MAX Packet packets[PacketSize*2];
   EIGEN_ALIGN_MAX Scalar ref[size];
   RealScalar refvalue = RealScalar(0);
@@ -192,6 +211,41 @@ template<typename Scalar,typename Packet> void packetmath()
   {
     internal::pstoreu(data2+offset, internal::pload<Packet>(data1));
     VERIFY(areApprox(data1, data2+offset, PacketSize) && "internal::pstoreu");
+  }
+
+  if (internal::unpacket_traits<Packet>::masked_load_available)
+  {
+    packet_helper<internal::unpacket_traits<Packet>::masked_load_available, Packet> h;
+    unsigned long long max_umask = (0x1ull << PacketSize);
+
+    for (int offset=0; offset<PacketSize; ++offset)
+    {
+      for (unsigned long long umask=0; umask<max_umask; ++umask)
+      {
+        h.store(data2, h.load(data1+offset, umask));
+        for (int k=0; k<PacketSize; ++k)
+          data3[k] = ((umask & ( 0x1ull << k )) >> k) ? data1[k+offset] : Scalar(0);
+        VERIFY(areApprox(data3, data2, PacketSize) && "internal::ploadu masked");
+      }
+    }
+  }
+
+  if (internal::unpacket_traits<Packet>::masked_store_available)
+  {
+    packet_helper<internal::unpacket_traits<Packet>::masked_store_available, Packet> h;
+    unsigned long long max_umask = (0x1ull << PacketSize);
+
+    for (int offset=0; offset<PacketSize; ++offset)
+    {
+      for (unsigned long long umask=0; umask<max_umask; ++umask)
+      {
+        internal::pstore(data2, internal::pset1<Packet>(Scalar(0)));
+        h.store(data2, h.loadu(data1+offset), umask);
+        for (int k=0; k<PacketSize; ++k)
+          data3[k] = ((umask & ( 0x1ull << k )) >> k) ? data1[k+offset] : Scalar(0);
+        VERIFY(areApprox(data3, data2, PacketSize) && "internal::pstoreu masked");
+      }
+    }
   }
 
   for (int offset=0; offset<PacketSize; ++offset)
@@ -238,6 +292,9 @@ template<typename Scalar,typename Packet> void packetmath()
   CHECK_CWISE2_IF(PacketTraits::HasMul, REF_MUL,  internal::pmul);
   CHECK_CWISE2_IF(PacketTraits::HasDiv, REF_DIV, internal::pdiv);
 
+  CHECK_CWISE1(internal::pnot, internal::pnot);
+  CHECK_CWISE1(internal::pzero, internal::pzero);
+  CHECK_CWISE1(internal::ptrue, internal::ptrue);
   CHECK_CWISE1(internal::negate, internal::pnegate);
   CHECK_CWISE1(numext::conj, internal::pconj);
 
@@ -398,6 +455,14 @@ template<typename Scalar,typename Packet> void packetmath()
     CHECK_CWISE2_IF(true, internal::pand, internal::pand);
     CHECK_CWISE2_IF(true, internal::pandnot, internal::pandnot);
   }
+
+  {
+    for (int i = 0; i < PacketSize; ++i) {
+      data1[i] = internal::random<Scalar>();
+      data2[i] = (i % 2) ? data1[i] : Scalar(0);
+    }
+    CHECK_CWISE2_IF(true, internal::pcmp_eq, internal::pcmp_eq);
+  }
 }
 
 template<typename Scalar,typename Packet> void packetmath_real()
@@ -557,6 +622,7 @@ template<typename Scalar,typename Packet> void packetmath_real()
       h.store(data2, internal::plog(h.load(data1)));
       VERIFY((numext::isinf)(data2[0]));
     }
+    if(PacketTraits::HasSqrt)
     {
       packet_helper<PacketTraits::HasSqrt,Packet> h;
       data1[0] = Scalar(-1.0f);
@@ -568,17 +634,22 @@ template<typename Scalar,typename Packet> void packetmath_real()
     if(PacketTraits::HasCos)
     {
       packet_helper<PacketTraits::HasCos,Packet> h;
-      for(Scalar k = 1; k<Scalar(1000)/std::numeric_limits<Scalar>::epsilon(); k*=2) {
-        data1[0] = k*Scalar(EIGEN_PI) * internal::random<Scalar>(0.8,1.2);
-        data1[1] = (k+1)*Scalar(EIGEN_PI) * internal::random<Scalar>(0.8,1.2);
-        h.store(data2, internal::pcos(h.load(data1)));
-        VERIFY(data2[0]<=Scalar(1.) && data2[0]>=Scalar(-1.));
-        VERIFY(data2[1]<=Scalar(1.) && data2[1]>=Scalar(-1.));
-        data1[0] = (2*k+1)*Scalar(EIGEN_PI)/2 * internal::random<Scalar>(0.8,1.2);
-        data1[1] = (2*k+3)*Scalar(EIGEN_PI)/2 * internal::random<Scalar>(0.8,1.2);
-        h.store(data2, internal::psin(h.load(data1)));
-        VERIFY(data2[0]<=Scalar(1.) && data2[0]>=Scalar(-1.));
-        VERIFY(data2[1]<=Scalar(1.) && data2[1]>=Scalar(-1.));
+      for(Scalar k = 1; k<Scalar(10000)/std::numeric_limits<Scalar>::epsilon(); k*=2)
+      {
+        for(int k1=0;k1<=1; ++k1)
+        {
+          data1[0] = (2*k+k1  )*Scalar(EIGEN_PI)/2 * internal::random<Scalar>(0.8,1.2);
+          data1[1] = (2*k+2+k1)*Scalar(EIGEN_PI)/2 * internal::random<Scalar>(0.8,1.2);
+          h.store(data2,            internal::pcos(h.load(data1)));
+          h.store(data2+PacketSize, internal::psin(h.load(data1)));
+          VERIFY(data2[0]<=Scalar(1.) && data2[0]>=Scalar(-1.));
+          VERIFY(data2[1]<=Scalar(1.) && data2[1]>=Scalar(-1.));
+          VERIFY(data2[PacketSize+0]<=Scalar(1.) && data2[PacketSize+0]>=Scalar(-1.));
+          VERIFY(data2[PacketSize+1]<=Scalar(1.) && data2[PacketSize+1]>=Scalar(-1.));
+
+          VERIFY_IS_APPROX(numext::abs2(data2[0])+numext::abs2(data2[PacketSize+0]), Scalar(1));
+          VERIFY_IS_APPROX(numext::abs2(data2[1])+numext::abs2(data2[PacketSize+1]), Scalar(1));
+        }
       }
 
       data1[0] =  std::numeric_limits<Scalar>::infinity();
@@ -596,6 +667,12 @@ template<typename Scalar,typename Packet> void packetmath_real()
       VERIFY((numext::isnan)(data2[0]));
       h.store(data2, internal::pcos(h.load(data1)));
       VERIFY((numext::isnan)(data2[0]));
+
+      data1[0] = -Scalar(0.);
+      h.store(data2, internal::psin(h.load(data1)));
+      VERIFY( internal::biteq(data2[0], data1[0]) );
+      h.store(data2, internal::pcos(h.load(data1)));
+      VERIFY_IS_EQUAL(data2[0], Scalar(1));
     }
   }
 }
@@ -633,6 +710,29 @@ template<typename Scalar,typename Packet> void packetmath_notcomplex()
     ref[i] = data1[0]+Scalar(i);
   internal::pstore(data2, internal::plset<Packet>(data1[0]));
   VERIFY(areApprox(ref, data2, PacketSize) && "internal::plset");
+
+  {
+    unsigned char* data1_bits = reinterpret_cast<unsigned char*>(data1);
+    // predux_all - not needed yet
+    // for (unsigned int i=0; i<PacketSize*sizeof(Scalar); ++i) data1_bits[i] = 0xff;
+    // VERIFY(internal::predux_all(internal::pload<Packet>(data1)) && "internal::predux_all(1111)");
+    // for(int k=0; k<PacketSize; ++k)
+    // {
+    //   for (unsigned int i=0; i<sizeof(Scalar); ++i) data1_bits[k*sizeof(Scalar)+i] = 0x0;
+    //   VERIFY( (!internal::predux_all(internal::pload<Packet>(data1))) && "internal::predux_all(0101)");
+    //   for (unsigned int i=0; i<sizeof(Scalar); ++i) data1_bits[k*sizeof(Scalar)+i] = 0xff;
+    // }
+
+    // predux_any
+    for (unsigned int i=0; i<PacketSize*sizeof(Scalar); ++i) data1_bits[i] = 0x0;
+    VERIFY( (!internal::predux_any(internal::pload<Packet>(data1))) && "internal::predux_any(0000)");
+    for(int k=0; k<PacketSize; ++k)
+    {
+      for (unsigned int i=0; i<sizeof(Scalar); ++i) data1_bits[k*sizeof(Scalar)+i] = 0xff;
+      VERIFY( internal::predux_any(internal::pload<Packet>(data1)) && "internal::predux_any(0101)");
+      for (unsigned int i=0; i<sizeof(Scalar); ++i) data1_bits[k*sizeof(Scalar)+i] = 0x00;
+    }
+  }
 }
 
 template<typename Scalar,typename Packet,bool ConjLhs,bool ConjRhs> void test_conj_helper(Scalar* data1, Scalar* data2, Scalar* ref, Scalar* pval)
